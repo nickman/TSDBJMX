@@ -37,6 +37,10 @@ public interface JMXRPCMBean {
 	public static final String CONFIG_JMX_URLS = "jmxrpc.jmxurls.";
 	/** The default JMX service URLs of the servers to start */
 	public static final String DEFAULT_JMX_URLS  = "service:jmx:jmxmp://0.0.0.0:4245";
+	/** The config key for the default timeout in ms. for all async calls */
+	public static final String CONFIG_ASYNC_TIMEOUT = "jmxrpc.async.timeout";
+	/** The default JMX service URLs of the servers to start */
+	public static final long DEFAULT_ASYNC_TIMEOUT  = 5000;
 	
 	
 	

@@ -19,6 +19,7 @@ under the License.
 package com.heliosapm.opentsdb.jmx;
 
 import java.lang.management.ManagementFactory;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,14 +34,15 @@ import net.opentsdb.meta.Annotation;
 import net.opentsdb.meta.UIDMeta;
 import net.opentsdb.stats.StatsCollector;
 import net.opentsdb.tsd.RpcPlugin;
+import net.opentsdb.uid.NoSuchUniqueId;
 import net.opentsdb.uid.UniqueId.UniqueIdType;
 import net.opentsdb.utils.Config;
 
-import org.hbase.async.HBaseClient;
 import org.hbase.async.HBaseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
 /**
@@ -60,6 +62,8 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	protected Config config = null;
 	/** The JMXMP connector servers */
 	protected Map<String, JMXConnectorServer> connectorServers = new HashMap<String, JMXConnectorServer>();
+	/** The default timeout for async calls in ms */
+	protected long defaultTimeout = DEFAULT_ASYNC_TIMEOUT;
 	/**
 	 * Creates a new JMXRPC
 	 */
@@ -183,15 +187,102 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	public final Config getConfig() {
 		return tsdb.getConfig();
 	}
+	
+	private UniqueIdType decode(final String uniqueIdType) {
+		if(uniqueIdType==null || uniqueIdType.trim().isEmpty()) throw new IllegalArgumentException("The passed UniqueIdType was null or empty");
+		try {
+			return UniqueIdType.valueOf(uniqueIdType.trim().toUpperCase());
+		} catch (Exception ex) {
+			throw new IllegalArgumentException("The passed UniqueIdType [" + uniqueIdType + "] was not a valid type. Valid types are " + Arrays.toString(UniqueIdType.values()));
+		}
+	}
 
 	/**
-	 * @param type
-	 * @param uid
-	 * @return
+	 * Attempts to find the name for a unique identifier given a type
+	 * @param type The type name of UID
+	 * @param uid The UID to search for
+	 * @param timeout The timeout in ms.
+	 * @return The name of the UID object if found
+	 * @throws IllegalArgumentException if the type, uid or timeout is not valid
+	 * @throws NoSuchUniqueId if the UID was not found
 	 * @see net.opentsdb.core.TSDB#getUidName(net.opentsdb.uid.UniqueId.UniqueIdType, byte[])
 	 */
-	public Deferred<String> getUidName(UniqueIdType type, byte[] uid) {
-		return tsdb.getUidName(type, uid);
+	public String getUidName(final String type, final byte[] uid, final long timeout) {		
+		if(uid==null || uid.length==0) throw new IllegalArgumentException("The passed uid was null or zero length");
+		if(timeout<0) throw new IllegalArgumentException("The passed timeout [" + timeout + "] was invalid");
+		final UniqueIdType utype = decode(type);
+		try {
+			return tsdb.getUidName(utype, uid).joinUninterruptibly(timeout);
+		} catch (NoSuchUniqueId nex) {
+			throw nex;
+		} catch (Exception e) {
+			throw new RuntimeException("Failed to getUidName", e);
+		}
+	}
+
+	/**
+	 * Attempts to find the name for a unique identifier given a type using the default timeout
+	 * @param type The type name of UID
+	 * @param uid The UID to search for
+	 * @return The name of the UID object if found
+	 * @throws IllegalArgumentException if the type, uid or timeout is not valid
+	 * @throws NoSuchUniqueId if the UID was not found
+	 * @see net.opentsdb.core.TSDB#getUidName(net.opentsdb.uid.UniqueId.UniqueIdType, byte[])
+	 */
+	public String getUidName(final String type, final byte[] uid) {		
+		return getUidName(type, uid, defaultTimeout);
+	}
+	
+	
+	/**
+	 * Updates a UIDMeta's display name with the default timeout
+	 * @param type The type name of the UID
+	 * @param uid The UIDMeta's UID
+	 * @param displayName The new display name
+	 */
+	public void updateUIDDisplayName(final String type, final String uid, final String displayName) {
+		updateUIDDisplayName(type, uid, displayName);
+	}
+	
+	/**
+	 * Updates a UIDMeta's display name
+	 * @param type The type name of the UID
+	 * @param uid The UIDMeta's UID
+	 * @param displayName The new display name
+	 * @param timeout The timeout in ms.
+	 */
+	public void updateUIDDisplayName(final String type, final String uid, final String displayName, final long timeout) {
+		final UniqueIdType utype = decode(type);
+		if(uid==null || uid.trim().isEmpty()) throw new IllegalArgumentException("The passed uid was null or zero length");
+		if(displayName==null) throw new IllegalArgumentException("The passed displayName was null");
+		if(timeout<0) throw new IllegalArgumentException("The passed timeout [" + timeout + "] was invalid");
+		final Throwable[] terr = new Throwable[1];
+		try {			
+			final boolean b = UIDMeta.getUIDMeta(tsdb, utype, uid.trim()).addCallbacks(
+				new Callback<Boolean, UIDMeta>() {
+					@Override
+					public Boolean call(final UIDMeta uidMeta) throws Exception {
+						uidMeta.setDisplayName(displayName);
+						return uidMeta.syncToStorage(tsdb, true).joinUninterruptibly();
+					}
+				},
+				new Callback<Boolean, Throwable>() {
+					@Override
+					public Boolean call(final Throwable t) throws Exception {
+						terr[0] = t;
+						return false;
+					}
+				}
+			).joinUninterruptibly(timeout);
+			if(!b) {
+				if(terr[0]==null) throw new RuntimeException("CAS Lock Failure");
+				throw terr[0];
+			}
+		} catch (NoSuchUniqueId nex) {
+			throw nex;			
+		} catch (Throwable e) {
+			throw new RuntimeException("Failed to update display name for " + utype.name() + ":" + uid, e);
+		}
 	}
 
 	/**
@@ -337,6 +428,22 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 */
 	public void deleteAnnotation(Annotation note) {
 		tsdb.deleteAnnotation(note);
+	}
+
+	/**
+	 * Returns the 
+	 * @return the defaultTimeout
+	 */
+	public long getDefaultTimeout() {
+		return defaultTimeout;
+	}
+
+	/**
+	 * Sets the 
+	 * @param defaultTimeout the defaultTimeout to set
+	 */
+	public void setDefaultTimeout(long defaultTimeout) {
+		this.defaultTimeout = defaultTimeout;
 	}
 
 }
