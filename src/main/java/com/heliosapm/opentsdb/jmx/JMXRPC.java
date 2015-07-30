@@ -264,6 +264,46 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 * @param timeout The timeout in ms.
 	 */
 	@Override
+//	public void updateUIDDisplayName(final String type, final String uid, final String displayName, final long timeout) {
+//		final UniqueIdType utype = decode(type);
+//		if(uid==null || uid.trim().isEmpty()) throw new IllegalArgumentException("The passed uid was null or zero length");
+//		if(displayName==null) throw new IllegalArgumentException("The passed displayName was null");
+//		if(timeout<0) throw new IllegalArgumentException("The passed timeout [" + timeout + "] was invalid");
+//		final Throwable[] terr = new Throwable[1];
+//		final long startTime = System.currentTimeMillis();
+//		try {			
+//			final boolean b = UIDMeta.getUIDMeta(tsdb, utype, uid.trim()).addCallbacks(
+//				new Callback<Boolean, UIDMeta>() {
+//					@Override
+//					public Boolean call(final UIDMeta uidMeta) throws Exception {
+////						uidMeta.setDisplayName("");
+//						uidMeta.setDisplayName(displayName);
+//						try {
+//							return uidMeta.syncToStorage(tsdb, false).joinUninterruptibly(timeout);
+//						} catch (Exception ex) {
+//							ex.printStackTrace(System.err);
+//							throw ex;
+//						}
+//					}
+//				},
+//				new Callback<Boolean, Throwable>() {
+//					@Override
+//					public Boolean call(final Throwable t) throws Exception {
+//						terr[0] = t;
+//						return false;
+//					}
+//				}
+//			).joinUninterruptibly(Math.max(startTime-System.currentTimeMillis()+timeout, 1));
+//			if(!b) {
+//				if(terr[0]==null) throw new RuntimeException("CAS Lock Failure");
+//				throw terr[0];
+//			}
+//		} catch (NoSuchUniqueId nex) {
+//			throw nex;			
+//		} catch (Throwable e) {
+//			throw new RuntimeException("Failed to update display name for " + utype.name() + ":" + uid + ":" + e);
+//		}
+//	}
 	public void updateUIDDisplayName(final String type, final String uid, final String displayName, final long timeout) {
 		final UniqueIdType utype = decode(type);
 		if(uid==null || uid.trim().isEmpty()) throw new IllegalArgumentException("The passed uid was null or zero length");
@@ -286,7 +326,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 						return false;
 					}
 				}
-			).joinUninterruptibly(timeout);
+			).joinUninterruptibly();
 			if(!b) {
 				if(terr[0]==null) throw new RuntimeException("CAS Lock Failure");
 				throw terr[0];
@@ -294,9 +334,11 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 		} catch (NoSuchUniqueId nex) {
 			throw nex;			
 		} catch (Throwable e) {
-			throw new RuntimeException("Failed to update display name for " + utype.name() + ":" + uid, e);
+			e.printStackTrace(System.err);
+			throw new RuntimeException("Failed! to update display name for " + utype.name() + ":" + uid + ":" +  e);
 		}
 	}
+	
 
 	/**
 	 * @param type
