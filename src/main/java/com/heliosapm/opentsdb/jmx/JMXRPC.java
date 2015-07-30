@@ -314,9 +314,13 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 			final boolean b = UIDMeta.getUIDMeta(tsdb, utype, uid.trim()).addCallbacks(
 				new Callback<Boolean, UIDMeta>() {
 					@Override
-					public Boolean call(final UIDMeta uidMeta) throws Exception {
-						uidMeta.setDisplayName(displayName);
-						return uidMeta.syncToStorage(tsdb, true).joinUninterruptibly();
+					public Boolean call(final UIDMeta uidMeta) throws Exception {						
+						final UIDMeta u = new UIDMeta(utype, uidMeta.getUID());
+						u.setCustom(uidMeta.getCustom());
+						u.setDescription(uidMeta.getDescription());
+						u.setNotes(uidMeta.getNotes());
+						u.setDisplayName(displayName);
+						return u.syncToStorage(tsdb, true).joinUninterruptibly();
 					}
 				},
 				new Callback<Boolean, Throwable>() {
@@ -326,7 +330,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 						return false;
 					}
 				}
-			).joinUninterruptibly();
+			).joinUninterruptibly(timeout);
 			if(!b) {
 				if(terr[0]==null) throw new RuntimeException("CAS Lock Failure");
 				throw terr[0];
