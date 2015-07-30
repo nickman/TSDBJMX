@@ -42,6 +42,7 @@ import org.hbase.async.HBaseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.heliosapm.utils.jmx.JMXHelper;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 
@@ -91,13 +92,21 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 				b.append("\n\t").append(url);
 			}
 		}
+		if(connectorServers.isEmpty()) {
+			final JMXServiceURL serviceURL = toJMXServiceURL(DEFAULT_JMX_URLS);
+			final JMXConnectorServer connectorServer = connector(serviceURL);			
+			connectorServers.put(DEFAULT_JMX_URLS, connectorServer);
+			b.append("\n\t").append(DEFAULT_JMX_URLS);
+		}
 		startJMXServers();
+		JMXHelper.registerMBean(this, OBJECT_NAME);
 		LOG.info("Initialized JMXRPC plugin. JMXConnectorServers installed and started at:{}", b.toString());
 	}
 	
 	private void startJMXServers() {
 		final AtomicBoolean started = new AtomicBoolean(false);
 		final Thread t = new Thread("JMXConnectorServerStarterDaemon") {
+			@Override
 			public void run() {
 				for(Map.Entry<String, JMXConnectorServer> entry: new HashMap<String, JMXConnectorServer>(connectorServers).entrySet()){
 					try {
@@ -207,6 +216,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 * @throws NoSuchUniqueId if the UID was not found
 	 * @see net.opentsdb.core.TSDB#getUidName(net.opentsdb.uid.UniqueId.UniqueIdType, byte[])
 	 */
+	@Override
 	public String getUidName(final String type, final byte[] uid, final long timeout) {		
 		if(uid==null || uid.length==0) throw new IllegalArgumentException("The passed uid was null or zero length");
 		if(timeout<0) throw new IllegalArgumentException("The passed timeout [" + timeout + "] was invalid");
@@ -229,6 +239,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 * @throws NoSuchUniqueId if the UID was not found
 	 * @see net.opentsdb.core.TSDB#getUidName(net.opentsdb.uid.UniqueId.UniqueIdType, byte[])
 	 */
+	@Override
 	public String getUidName(final String type, final byte[] uid) {		
 		return getUidName(type, uid, defaultTimeout);
 	}
@@ -240,8 +251,9 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 * @param uid The UIDMeta's UID
 	 * @param displayName The new display name
 	 */
+	@Override
 	public void updateUIDDisplayName(final String type, final String uid, final String displayName) {
-		updateUIDDisplayName(type, uid, displayName);
+		updateUIDDisplayName(type, uid, displayName, defaultTimeout);
 	}
 	
 	/**
@@ -251,6 +263,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 * @param displayName The new display name
 	 * @param timeout The timeout in ms.
 	 */
+	@Override
 	public void updateUIDDisplayName(final String type, final String uid, final String displayName, final long timeout) {
 		final UniqueIdType utype = decode(type);
 		if(uid==null || uid.trim().isEmpty()) throw new IllegalArgumentException("The passed uid was null or zero length");
@@ -296,26 +309,29 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	}
 
 	/**
-	 * @return
-	 * @see net.opentsdb.core.TSDB#uidCacheHits()
+	 * {@inheritDoc}
+	 * @see com.heliosapm.opentsdb.jmx.JMXRPCMBean#getUidCacheHits()
 	 */
-	public int uidCacheHits() {
+	@Override
+	public int getUidCacheHits() {
 		return tsdb.uidCacheHits();
 	}
 
 	/**
-	 * @return
-	 * @see net.opentsdb.core.TSDB#uidCacheMisses()
+	 * {@inheritDoc}
+	 * @see com.heliosapm.opentsdb.jmx.JMXRPCMBean#getUidCacheMisses()
 	 */
-	public int uidCacheMisses() {
+	@Override
+	public int getUidCacheMisses() {
 		return tsdb.uidCacheMisses();
 	}
 
 	/**
-	 * @return
-	 * @see net.opentsdb.core.TSDB#uidCacheSize()
+	 * {@inheritDoc}
+	 * @see com.heliosapm.opentsdb.jmx.JMXRPCMBean#getUidCacheSize()
 	 */
-	public int uidCacheSize() {
+	@Override
+	public int getUidCacheSize() {
 		return tsdb.uidCacheSize();
 	}
 
@@ -392,6 +408,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 * 
 	 * @see net.opentsdb.core.TSDB#dropCaches()
 	 */
+	@Override
 	public void dropCaches() {
 		tsdb.dropCaches();
 	}
@@ -431,18 +448,21 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	}
 
 	/**
-	 * Returns the 
-	 * @return the defaultTimeout
+	 * {@inheritDoc}
+	 * @see com.heliosapm.opentsdb.jmx.JMXRPCMBean#getDefaultTimeout()
 	 */
+	@Override
 	public long getDefaultTimeout() {
 		return defaultTimeout;
 	}
 
 	/**
-	 * Sets the 
-	 * @param defaultTimeout the defaultTimeout to set
+	 * {@inheritDoc}
+	 * @see com.heliosapm.opentsdb.jmx.JMXRPCMBean#setDefaultTimeout(long)
 	 */
-	public void setDefaultTimeout(long defaultTimeout) {
+	@Override
+	public void setDefaultTimeout(final long defaultTimeout) {
+		if(defaultTimeout<0) throw new IllegalArgumentException("The passed timeout [" + defaultTimeout + "] was invalid");
 		this.defaultTimeout = defaultTimeout;
 	}
 

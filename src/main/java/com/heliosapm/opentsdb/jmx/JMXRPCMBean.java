@@ -20,7 +20,12 @@ package com.heliosapm.opentsdb.jmx;
 
 import javax.management.ObjectName;
 
+import net.opentsdb.meta.UIDMeta;
+import net.opentsdb.uid.NoSuchUniqueId;
+import net.opentsdb.uid.UniqueId.UniqueIdType;
+
 import com.heliosapm.utils.jmx.JMXHelper;
+import com.stumbleupon.async.Callback;
 
 /**
  * <p>Title: JMXRPCMBean</p>
@@ -41,6 +46,82 @@ public interface JMXRPCMBean {
 	public static final String CONFIG_ASYNC_TIMEOUT = "jmxrpc.async.timeout";
 	/** The default JMX service URLs of the servers to start */
 	public static final long DEFAULT_ASYNC_TIMEOUT  = 5000;
+	
+	/**
+	 * Returns the default timeout in ms.
+	 * @return the default timeout
+	 */
+	public long getDefaultTimeout();
+
+	/**
+	 * Sets the default timeout in ms.
+	 * @param defaultTimeout the default timeout to set
+	 */
+	public void setDefaultTimeout(long defaultTimeout);
+	
+	/**
+	 * Attempts to find the name for a unique identifier given a type
+	 * @param type The type name of UID
+	 * @param uid The UID to search for
+	 * @param timeout The timeout in ms.
+	 * @return The name of the UID object if found
+	 * @throws IllegalArgumentException if the type, uid or timeout is not valid
+	 * @throws NoSuchUniqueId if the UID was not found
+	 * @see net.opentsdb.core.TSDB#getUidName(net.opentsdb.uid.UniqueId.UniqueIdType, byte[])
+	 */
+	public String getUidName(final String type, final byte[] uid, final long timeout);
+
+	/**
+	 * Attempts to find the name for a unique identifier given a type using the default timeout
+	 * @param type The type name of UID
+	 * @param uid The UID to search for
+	 * @return The name of the UID object if found
+	 * @throws IllegalArgumentException if the type, uid or timeout is not valid
+	 * @throws NoSuchUniqueId if the UID was not found
+	 * @see net.opentsdb.core.TSDB#getUidName(net.opentsdb.uid.UniqueId.UniqueIdType, byte[])
+	 */
+	public String getUidName(final String type, final byte[] uid);
+	
+	
+	/**
+	 * Updates a UIDMeta's display name with the default timeout
+	 * @param type The type name of the UID
+	 * @param uid The UIDMeta's UID
+	 * @param displayName The new display name
+	 */
+	public void updateUIDDisplayName(final String type, final String uid, final String displayName);
+	
+	/**
+	 * Updates a UIDMeta's display name
+	 * @param type The type name of the UID
+	 * @param uid The UIDMeta's UID
+	 * @param displayName The new display name
+	 * @param timeout The timeout in ms.
+	 */
+	public void updateUIDDisplayName(final String type, final String uid, final String displayName, final long timeout);
+	
+	/**
+	 * Flushes the internal TSDB caches
+	 */
+	public void dropCaches();
+	
+	/**
+	 * Returns the cummulative number of UID cache hits
+	 * @return the cummulative number of UID cache hits
+	 */
+	public int getUidCacheHits();
+
+	/**
+	 * Returns the cummulative number of UID cache misses
+	 * @return the cummulative number of UID cache misses
+	 */
+	public int getUidCacheMisses();
+
+	/**
+	 * Returns the UID cache size
+	 * @return the UID cache size
+	 */
+	public int getUidCacheSize();
 	
 	
 	

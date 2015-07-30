@@ -22,7 +22,8 @@
 		<javadoc-plugin.version>2.9</javadoc-plugin.version>
 		<jar-plugin.version>2.4</jar-plugin.version>
 		<eclipse-plugin.version>2.9</eclipse-plugin.version>
-		<surefire.version>2.16</surefire.version>		
+		<surefire.version>2.16</surefire.version>
+		<shade.version>2.1</shade.version>		
 	</properties>
 	
 	
@@ -34,6 +35,7 @@
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
 			<version>${junit.version}</version>
+			<scope>test</scope>
 		</dependency>
 		
 		<!--   MISC UTILS   -->
@@ -114,7 +116,54 @@
 			  </manifestEntries>
 		      </archive>
 		  </configuration>
-            	</plugin>			
+            	</plugin>
+            	<plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                  <artifactId>maven-shade-plugin</artifactId>
+                  <version>${shade.version}</version>
+                    <executions>
+                        <execution>
+                          <phase>package</phase>
+                          <goals>
+                            <goal>shade</goal>
+                          </goals>
+                          <configuration>
+                            <artifactSet>
+                              <excludes>
+                                <exclude>META-INF/*.SF</exclude>
+                                <exclude>META-INF/*.DSA</exclude>
+                                <exclude>META-INF/*.RSA</exclude>                       
+                              </excludes>
+                              <includes>
+                                
+                              </includes>
+                            </artifactSet>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                            <addDefaultSpecificationEntries>true</addDefaultSpecificationEntries>
+                            <includePluginDependencies>false</includePluginDependencies>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                          <manifestEntries> 
+                              <Main-Class>com.heliosapm.opentsdb.client.boot.JavaAgentInstaller</Main-Class> 
+                              <Premain-Class>com.heliosapm.opentsdb.client.boot.JavaAgent</Premain-Class>
+                              <Agent-Class>com.heliosapm.opentsdb.client.boot.JavaAgent</Agent-Class>
+                              <Can-Redefine-Classes>true</Can-Redefine-Classes>
+                              <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                              <Can-Set-Native-Method-Prefix>true</Can-Set-Native-Method-Prefix>                   
+                          </manifestEntries>
+                                </transformer>
+                                
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.DontIncludeResourceTransformer">
+                                    <resource>.SF</resource>
+                                    <resource>.DSA</resource>
+                                    <resource>.RSA</resource>
+                                </transformer>
+                            </transformers>
+                          </configuration>
+                        </execution>
+                      </executions>
+                    </plugin>     
+            				
 		</plugins>
 	</build>
 </project>
