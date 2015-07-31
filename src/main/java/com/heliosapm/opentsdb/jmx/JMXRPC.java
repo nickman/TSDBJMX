@@ -42,9 +42,11 @@ import org.hbase.async.HBaseException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.heliosapm.utils.concurrency.ExtendedThreadManager;
 import com.heliosapm.utils.jmx.JMXHelper;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import com.stumbleupon.async.TimeoutException;
 
 /**
  * <p>Title: JMXRPC</p>
@@ -56,6 +58,7 @@ import com.stumbleupon.async.Deferred;
 
 public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	private static final Logger LOG = LoggerFactory.getLogger(JMXRPC.class);
+	
 	
 	/** The injected TSDB instance */
 	protected TSDB tsdb = null;
@@ -70,6 +73,7 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	 */
 	public JMXRPC() {
 		LOG.info("Created JMXRPC plugin instance");
+		ExtendedThreadManager.install();
 	}
 
 	/**
@@ -309,38 +313,42 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 		if(uid==null || uid.trim().isEmpty()) throw new IllegalArgumentException("The passed uid was null or zero length");
 		if(displayName==null) throw new IllegalArgumentException("The passed displayName was null");
 		if(timeout<0) throw new IllegalArgumentException("The passed timeout [" + timeout + "] was invalid");
-		final Throwable[] terr = new Throwable[1];
+		final long startTime = System.currentTimeMillis();
+		long timeLeft = timeout;
+		int cnt = 0;
+		while(timeLeft > 0 && (startTime+timeLeft) >= System.currentTimeMillis()) {
+			if(doUidDisplayName(utype, uid, displayName, timeLeft)) return;
+			cnt++;
+			timeLeft = System.currentTimeMillis() - startTime;
+		}
+		throw new RuntimeException("Timed out after [" + cnt + "] attempts trying to update " + utype.name() + ":" + uid);
+	}
+	
+	private boolean doUidDisplayName(final UniqueIdType utype, final String uid, final String displayName, final long timeout) {
+		final long outerStart = System.currentTimeMillis();
 		try {			
-			final boolean b = UIDMeta.getUIDMeta(tsdb, utype, uid.trim()).addCallbacks(
-				new Callback<Boolean, UIDMeta>() {
-					@Override
-					public Boolean call(final UIDMeta uidMeta) throws Exception {						
-						final UIDMeta u = new UIDMeta(utype, uidMeta.getUID());
-						u.setCustom(uidMeta.getCustom());
-						u.setDescription(uidMeta.getDescription());
-						u.setNotes(uidMeta.getNotes());
-						u.setDisplayName(displayName);
-						return u.syncToStorage(tsdb, true).joinUninterruptibly();
-					}
-				},
-				new Callback<Boolean, Throwable>() {
-					@Override
-					public Boolean call(final Throwable t) throws Exception {
-						terr[0] = t;
-						return false;
-					}
+			
+			final UIDMeta u = new UIDMeta(utype, uid);
+			u.setDisplayName(displayName);
+			try {
+				final boolean complete = u.syncToStorage(tsdb, false).joinUninterruptibly(timeout);
+				final long innerComplete = System.currentTimeMillis();
+				LOG.info("Updated UID [{}] in [{}] ms.", u, innerComplete-outerStart);
+				if(complete) {
+					tsdb.indexUIDMeta(u);
 				}
-			).joinUninterruptibly(timeout);
-			if(!b) {
-				if(terr[0]==null) throw new RuntimeException("CAS Lock Failure");
-				throw terr[0];
+				return true;
+			} catch (TimeoutException te) {
+				return false;
 			}
 		} catch (NoSuchUniqueId nex) {
 			throw nex;			
 		} catch (Throwable e) {
 			e.printStackTrace(System.err);
-			throw new RuntimeException("Failed! to update display name for " + utype.name() + ":" + uid + ":" +  e);
+			return false;
+//			throw new RuntimeException("Failed! to update display name for " + utype.name() + ":" + uid + ":" +  e);
 		}
+		
 	}
 	
 
