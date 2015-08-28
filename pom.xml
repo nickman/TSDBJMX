@@ -16,6 +16,8 @@
  		<junit.version>4.12</junit.version>
 		<jmx-optional.version>1.0-b02</jmx-optional.version>
 		<helios.version>1.0-SNAPSHOT</helios.version>
+		<postgres.version>9.4-1201-jdbc41</postgres.version>
+		<hikari.version>2.3.8</hikari.version>
 		<!-- Plugin Versions -->
 		<jar-plugin.version>2.3</jar-plugin.version>
 		<source-plugin.version>2.2</source-plugin.version>
@@ -44,6 +46,32 @@
 			<artifactId>heliosutils</artifactId>
 			<version>${helios.version}</version>
 		</dependency>
+		
+		<dependency>
+			<groupId>com.heliosapm.tsdbex</groupId>
+			<artifactId>tsdbex-sqlbinder</artifactId>
+			<version>0.0.1-SNAPSHOT</version>
+		</dependency>
+		
+		<dependency>
+		  <groupId>org.postgresql</groupId>
+		  <artifactId>postgresql</artifactId>
+		  <version>${postgres.version}</version>
+		</dependency>
+
+		<dependency>
+		  <groupId>com.h2database</groupId>
+		  <artifactId>h2</artifactId>
+		  <version>1.4.187</version>
+		</dependency>
+
+		<dependency>
+		    <groupId>com.zaxxer</groupId>
+		    <artifactId>HikariCP-java6</artifactId>
+		    <version>${hikari.version}</version>
+		</dependency>
+		
+		
 
 		<!--   THE BEST-EST JMX PROTOCOL   -->
         <dependency>
@@ -58,7 +86,7 @@
 			<groupId>net.opentsdb</groupId>
 			<artifactId>opentsdb</artifactId>
 			<version>${opentsdb.version}</version>
-			<scope>provided</scope>
+			<!-- <scope>provided</scope> -->
 		</dependency>
 
 
