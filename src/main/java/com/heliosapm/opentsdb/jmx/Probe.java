@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.PriorityBlockingQueue;
 
 import jsr166e.LongAdder;
 import net.opentsdb.core.TSDB;
@@ -86,6 +87,8 @@ public class Probe extends SearchPlugin {
 	
 	final Map<String, String[]> tagPairKeys = new ConcurrentHashMap<String, String[]>();
 	final Map<String, Long> fqnKeys = new ConcurrentHashMap<String, Long>();
+	
+	final BlockingQueue<DBOp> processingQueue = new PriorityBlockingQueue<DBOp>(1024);
 	
 	
 	
@@ -225,7 +228,7 @@ public class Probe extends SearchPlugin {
 				break;				
 			case TAGK:
 				tagKUidCount.increment();
-				tagKNames.put(meta.getUID(), meta);
+				if(tagKNames.put(meta.getUID(), meta)==null)  
 				sqlWorker.executeUpdate("INSERT INTO TSD_TAGK VALUES(?, 1, ?, ?, ?, null, null, null, null)", meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
 				break;
 			case TAGV:
