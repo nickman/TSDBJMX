@@ -80,9 +80,14 @@ public class Probe extends SearchPlugin {
 	final LongAdder tagVUidCount = new LongAdder();
 	final LongAdder tagKUidCount = new LongAdder();
 	
-	final Map<String, UIDMeta> metricNames = new ConcurrentHashMap<String, UIDMeta>(300000);
-	final Map<String, UIDMeta> tagVNames = new ConcurrentHashMap<String, UIDMeta>(300000);
-	final Map<String, UIDMeta> tagKNames = new ConcurrentHashMap<String, UIDMeta>(300000);
+	final Map<String, UIDMeta> metricNames = new ConcurrentHashMap<String, UIDMeta>();
+	final Map<String, UIDMeta> tagVNames = new ConcurrentHashMap<String, UIDMeta>();
+	final Map<String, UIDMeta> tagKNames = new ConcurrentHashMap<String, UIDMeta>();
+	
+	final Map<String, String[]> tagPairKeys = new ConcurrentHashMap<String, String[]>();
+	final Map<String, Long> fqnKeys = new ConcurrentHashMap<String, Long>();
+	
+	
 	
 	public void resetCounts() {
 		tsMetaCount.reset();
@@ -200,27 +205,8 @@ public class Probe extends SearchPlugin {
 		 */
 		@Override
 		public Deferred<Object> indexTSMeta(TSMeta meta) {
-//			LOG.info("TSMeta: {}", meta.getTSUID());
 			tsMetaCount.increment();
-//			try {
-//				meta = meta.getTSMeta(tsdb, meta.getTSUID()).joinUninterruptibly(5000);
-//			} catch (Exception e) {
-//				// TODO Auto-generated catch block
-//				e.printStackTrace();
-//			}
-//			if(metricNames.add(meta.getMetric().getName())) metricUidCount.increment();
-//			for(UIDMeta um: meta.getTags()) {
-//				switch(um.getType()) {
-//				case TAGK:
-//					if(tagKNames.add(um.getName())) tagKUidCount.increment();					
-//					break;
-//				case TAGV:
-//					if(tagVNames.add(um.getName())) tagVUidCount.increment();
-//					break;				
-//				}
-//			}
-//
-			
+			LOG.info("TSUID: [{}]", meta.getTSUID());
 			return Deferred.fromResult(null);
 		}
 		
