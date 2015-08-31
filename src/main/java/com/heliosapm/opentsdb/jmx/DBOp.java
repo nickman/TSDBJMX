@@ -35,7 +35,7 @@ public abstract class DBOp implements Comparable<DBOp>, Runnable {
 	 * @param op The op type
 	 * @param args the Op arguments
 	 */
-	public DBOp(MetaDBOp op, final Object...args) {
+	public DBOp(final MetaDBOp op, final Object...args) {
 		this.op = op;
 		this.args = args;
 	}
@@ -50,6 +50,8 @@ public abstract class DBOp implements Comparable<DBOp>, Runnable {
 		return otherOp.op.compareTo(op);
 	}
 	
-	
+	public Object[] getArgs() {
+		return args;
+	}
 	
 }

@@ -34,11 +34,11 @@ public enum MetaDBOp implements DBOpFactory {
 	/** Saves a tagK UIDMeta */
 	UIDMETAK("INSERT INTO TSD_TAGK VALUES(?, 1, ?, ?, ?, null, null, null, null)"){
 		@Override
-		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final Object... args) {
+		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final DBOp dbOp) {
 			return new DBOp(UIDMETAK) {
 				@Override
 				public void run() {
-					final UIDMeta meta = (UIDMeta)args[0];
+					final UIDMeta meta = (UIDMeta)dbOp.getArgs()[0];
 					try {
 						worker.batch(ps.getConnection(), ps, sqlOp, meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
 					} catch (SQLException ex) {
@@ -51,11 +51,11 @@ public enum MetaDBOp implements DBOpFactory {
 	/** Saves a tagV UIDMeta */
 	UIDMETAV("INSERT INTO TSD_TAGV VALUES(?, 1, ?, ?, ?, null, null, null, null)"){
 		@Override
-		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final Object... args) {
+		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final DBOp dbOp) {
 			return new DBOp(UIDMETAK) {
 				@Override
 				public void run() {
-					final UIDMeta meta = (UIDMeta)args[0];
+					final UIDMeta meta = (UIDMeta)dbOp.getArgs()[0];
 					try {
 						worker.batch(ps.getConnection(), ps, sqlOp, meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
 					} catch (SQLException ex) {
@@ -68,11 +68,11 @@ public enum MetaDBOp implements DBOpFactory {
 	/** Saves a metric UIDMeta */
 	UIDMETAM("INSERT INTO TSD_METRIC VALUES(?, 1, ?, ?, ?, null, null, null, null)"){
 		@Override
-		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final Object... args) {
+		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final DBOp dbOp) {
 			return new DBOp(UIDMETAK) {
 				@Override
 				public void run() {
-					final UIDMeta meta = (UIDMeta)args[0];
+					final UIDMeta meta = (UIDMeta)dbOp.getArgs()[0];
 					try {
 						worker.batch(ps.getConnection(), ps, sqlOp, meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
 					} catch (SQLException ex) {
@@ -81,13 +81,28 @@ public enum MetaDBOp implements DBOpFactory {
 				}
 			};			
 		}
-	};	
-//	UIDPAIR(){
-//		@Override
-//		public DBOp newDbOp(UIDPAIR) {			
-//			return null;
-//		}
-//	},
+	},	
+	/** Tag Pair Insert */
+	UIDPAIR("INSERT INTO TSD_TAGPAIR VALUES(?,?,?,?)"){
+		@Override
+		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final DBOp dbOp) {
+			return new DBOp(UIDMETAK) {
+				@Override
+				public void run() {
+					final Object[] args = dbOp.getArgs();
+					final String pairKey = (String)args[0];
+					final String tagKey = (String)args[1];
+					final String tagValue = (String)args[2];
+					final String name = tagKey + "=" + tagValue;
+					try {
+						worker.batch(ps.getConnection(), ps, sqlOp, pairKey, tagKey, tagValue, name);
+					} catch (SQLException ex) {
+						throw new RuntimeException("DBOp Failure [" + op + "]", ex);
+					}
+				}
+			};			
+		}
+	};
 //	UIDPAIRFQN(){
 //		@Override
 //		public DBOp newDbOp(UIDPAIRFQN) {			

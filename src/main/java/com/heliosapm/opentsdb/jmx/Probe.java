@@ -22,9 +22,13 @@ import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 
@@ -36,6 +40,8 @@ import net.opentsdb.meta.UIDMeta;
 import net.opentsdb.search.SearchPlugin;
 import net.opentsdb.search.SearchQuery;
 import net.opentsdb.stats.StatsCollector;
+import net.opentsdb.uid.UniqueId;
+import net.opentsdb.uid.UniqueId.UniqueIdType;
 import net.opentsdb.utils.Config;
 
 import org.hbase.async.Bytes;
@@ -47,7 +53,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.heliosapm.tsdbex.sqlbinder.SQLWorker;
+import com.heliosapm.tsdbex.sqlbinder.SQLWorker.ResultSetHandler;
 import com.heliosapm.utils.reflect.PrivateAccessor;
+import com.heliosapm.utils.time.SystemClock;
+import com.heliosapm.utils.time.SystemClock.ElapsedTime;
 import com.heliosapm.utils.url.URLHelper;
 import com.stumbleupon.async.Deferred;
 import com.zaxxer.hikari.HikariConfig;
@@ -61,7 +70,7 @@ import com.zaxxer.hikari.HikariDataSource;
  * <p><code>com.heliosapm.opentsdb.jmx.Probe</code></p>
  */
 
-public class Probe extends SearchPlugin {
+public class Probe extends SearchPlugin implements Runnable {
 	/** Retain system out */
 	protected static final PrintStream OUT = System.out;
 	/** Retain system err */
@@ -90,7 +99,108 @@ public class Probe extends SearchPlugin {
 	
 	final BlockingQueue<DBOp> processingQueue = new PriorityBlockingQueue<DBOp>(1024);
 	
+	/** Cache population SQL for metrics */
+	public static final String CACHE_POP_METRIC_SQL = "SELECT XUID, NAME, CREATED FROM TSD_METRIC";
+	/** Cache population SQL for tagks */
+	public static final String CACHE_POP_TAGK_SQL = "SELECT XUID, NAME, CREATED FROM TSD_TAGK";
+	/** Cache population SQL for tagvs */
+	public static final String CACHE_POP_TAGV_SQL = "SELECT XUID, NAME, CREATED FROM TSD_TAGV";
+	/** Cache population SQL for tag pairs */
+	public static final String CACHE_POP_TAGPAIRS_SQL = "SELECT XUID, TAGK, TAGV FROM TSD_TAGPAIR";
 	
+	
+	Connection batchConn = null;
+	PreparedStatement metricInsertPs  = null;
+	PreparedStatement tagKInsertPs  = null;
+	PreparedStatement tagVInsertPs  = null;
+	PreparedStatement tagPairInsertPs  = null;
+	
+	Thread processingThread = null;
+	
+	boolean keepProcessing = true;
+
+	
+	
+	//tagPairKeys
+	public void populateTagPairCache() {
+		final ElapsedTime et = SystemClock.startClock();
+		tagPairKeys.clear();
+		sqlWorker.executeQuery(CACHE_POP_TAGPAIRS_SQL, new ResultSetHandler(){
+			@Override
+			public boolean onRow(final int rowId, final ResultSet rset) {
+				try {
+					final String xuid = rset.getString(1);
+					final String[] pair = new String[]{rset.getString(2), rset.getString(3)};
+					tagPairKeys.put(xuid, pair);
+				} catch (Exception ex) {
+					LOG.error("Row failure in cache pop for tag pairs", ex);
+				}
+				return true;
+			}
+		});
+		LOG.info("Populated Tag Pair Cache Cache: {}", et.printAvg("Rows", tagPairKeys.size()));
+	}
+	
+	
+	public void populateMetricCache() {
+		final ElapsedTime et = SystemClock.startClock();
+		metricNames.clear();
+		sqlWorker.executeQuery(CACHE_POP_METRIC_SQL, new ResultSetHandler(){
+			@Override
+			public boolean onRow(final int rowId, final ResultSet rset) {
+				try {
+					final String uids = rset.getString(1);
+					final UIDMeta uid = new UIDMeta(UniqueIdType.METRIC, UniqueId.stringToUid(uids), rset.getString(2));
+					uid.setCreated(rset.getTimestamp(3).getTime());
+					metricNames.put(uids, uid);
+				} catch (Exception ex) {
+					LOG.error("Row failure in cache pop for metrics", ex);
+				}
+				return true;
+			}
+		});
+		LOG.info("Populated Metric UID Cache: {}", et.printAvg("Rows", metricNames.size()));
+	}
+	
+	public void populateTagKCache() {
+		final ElapsedTime et = SystemClock.startClock();
+		tagVNames.clear();
+		sqlWorker.executeQuery(CACHE_POP_TAGK_SQL, new ResultSetHandler(){
+			@Override
+			public boolean onRow(final int rowId, final ResultSet rset) {
+				try {
+					final String uids = rset.getString(1);
+					final UIDMeta uid = new UIDMeta(UniqueIdType.TAGK, UniqueId.stringToUid(uids), rset.getString(2));
+					uid.setCreated(rset.getTimestamp(3).getTime());
+					tagKNames.put(uids, uid);
+				} catch (Exception ex) {
+					LOG.error("Row failure in cache pop for tagks", ex);
+				}
+				return true;
+			}
+		});
+		LOG.info("Populated TagK UID Cache: {}", et.printAvg("Rows", metricNames.size()));
+	}
+	
+	public void populateTagVCache() {
+		final ElapsedTime et = SystemClock.startClock();
+		tagKNames.clear();
+		sqlWorker.executeQuery(CACHE_POP_TAGV_SQL, new ResultSetHandler(){
+			@Override
+			public boolean onRow(final int rowId, final ResultSet rset) {
+				try {
+					final String uids = rset.getString(1);
+					final UIDMeta uid = new UIDMeta(UniqueIdType.TAGV, UniqueId.stringToUid(uids), rset.getString(2));
+					uid.setCreated(rset.getTimestamp(3).getTime());
+					tagVNames.put(uids, uid);
+				} catch (Exception ex) {
+					LOG.error("Row failure in cache pop for tagvs", ex);
+				}
+				return true;
+			}
+		});
+		LOG.info("Populated TagV UID Cache: {}", et.printAvg("Rows", metricNames.size()));
+	}
 	
 	public void resetCounts() {
 		tsMetaCount.reset();
@@ -114,6 +224,8 @@ public class Probe extends SearchPlugin {
 
 	/**
 	 * Creates a new Probe
+	 * @param client 
+	 * @param props 
 	 */
 	public Probe(final HBaseClient client, final Properties props) {
 		this.client = client;
@@ -209,7 +321,13 @@ public class Probe extends SearchPlugin {
 		@Override
 		public Deferred<Object> indexTSMeta(TSMeta meta) {
 			tsMetaCount.increment();
-			LOG.info("TSUID: [{}]", meta.getTSUID());
+			try {
+				processingQueue.put(
+						MetaDBOp.UIDMETAM.newDbOp(sqlWorker, tagPairInsertPs, new DBOp(MetaDBOp.UIDMETAM, meta)));
+			} catch (Exception ex) {
+				LOG.error("Failed to enqueue tag pair insert", ex);
+			}
+
 			return Deferred.fromResult(null);
 		}
 		
@@ -220,32 +338,56 @@ public class Probe extends SearchPlugin {
 		@Override
 		public Deferred<Object> indexUIDMeta(final UIDMeta meta) {
 //			LOG.info("UIDMeta: {}", meta.getName());
-			switch(meta.getType()) {
-			case METRIC:
-				metricUidCount.increment();
-				metricNames.put(meta.getUID(), meta);
-				sqlWorker.executeUpdate("INSERT INTO TSD_METRIC VALUES(?, 1, ?, ?, ?, null, null, null, null)", meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
-				break;				
-			case TAGK:
-				tagKUidCount.increment();
-				if(tagKNames.put(meta.getUID(), meta)==null)  
-				sqlWorker.executeUpdate("INSERT INTO TSD_TAGK VALUES(?, 1, ?, ?, ?, null, null, null, null)", meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
-				break;
-			case TAGV:
-				tagVUidCount.increment();
-				tagVNames.put(meta.getUID(), meta);
-				sqlWorker.executeUpdate("INSERT INTO TSD_TAGV VALUES(?, 1, ?, ?, ?, null, null, null, null)", meta.getUID(), meta.getName(), meta.getCreated(), System.currentTimeMillis());
-				break;
-			default:
-				break;			
+			try {
+				switch(meta.getType()) {
+				case METRIC:					
+					metricUidCount.increment();
+					processingQueue.put(MetaDBOp.UIDMETAM.newDbOp(sqlWorker, metricInsertPs, meta));
+					break;				
+				case TAGK:
+					tagKUidCount.increment();
+					processingQueue.put(MetaDBOp.UIDMETAK.newDbOp(sqlWorker, tagKInsertPs, meta));
+					break;
+				case TAGV:
+					tagVUidCount.increment();
+					processingQueue.put(MetaDBOp.UIDMETAV.newDbOp(sqlWorker, tagVInsertPs, meta));
+					break;					
+				default:
+					break;			
+				}
+			} catch (Exception ex) {
+				LOG.error("Failed to enqueue Op", ex);
 			}
 			return Deferred.fromResult(null);
 		}
 	  
+	public void initBatches() {
+		try {
+			batchConn = ds.getConnection();
+			metricInsertPs  = batchConn.prepareStatement(MetaDBOp.UIDMETAM.sqlOp);
+			tagKInsertPs  = batchConn.prepareStatement(MetaDBOp.UIDMETAK.sqlOp);
+			tagVInsertPs  = batchConn.prepareStatement(MetaDBOp.UIDMETAV.sqlOp);
+			tagPairInsertPs  = batchConn.prepareStatement(MetaDBOp.UIDPAIR.sqlOp);
+		} catch (Exception ex) {
+			LOG.error("Failed to init batches", ex);
+			throw new RuntimeException("Failed to init batches", ex);
+		}
+		
+	}
 	
 	public void metaSync() {
 		try {
 			resetCounts();
+			LOG.info("Populating Caches.....");
+			populateMetricCache();
+			populateTagKCache();
+			populateTagVCache();
+			populateTagPairCache();
+			LOG.info("Initializing Caches.....");
+			initBatches();
+			LOG.info("Starting processing thread....");
+			processingThread = new Thread(this, "ProcessingThread");
+			processingThread.start();
 			LOG.info("Starting synchronizeFromStore.....");
 			final long start = System.currentTimeMillis();
 			Class<?> uidManagerClazz =  Class.forName("net.opentsdb.tools.UidManager");
@@ -255,10 +397,28 @@ public class Probe extends SearchPlugin {
 			long elapsed = System.currentTimeMillis() - start;
 			LOG.info("MetaSync Result:" + x);
 			LOG.info("metaSync complete in {}: {}", elapsed, x);
-			
+			LOG.info("Waiting for processing thread....");
+			processingThread.join(120000);
+			LOG.info("Processing Complete");
 		} catch (Exception ex) {
 			LOG.error("MetaSync Failed", ex);
 		}		
+	}
+	
+	public void run() {
+		while(keepProcessing) {
+			try {
+				processingQueue.take().run();
+			} catch (InterruptedException iex) {
+				if(!keepProcessing) break;
+				LOG.error("Processing Thread Interrupted", iex);
+				if(Thread.interrupted()) Thread.interrupted();
+				continue;
+			} catch (Exception ex) {
+				LOG.error("Processing Thread Op Error", ex);
+			}			
+		}
+		LOG.info("Processing Thread Terminated");
 	}
 	
 	public void purgeMeta() {

@@ -28,5 +28,5 @@ import com.heliosapm.tsdbex.sqlbinder.SQLWorker;
  */
 
 public interface DBOpFactory {
-	public DBOp newDbOp(SQLWorker worker, PreparedStatement ps, Object...args);
+	public DBOp newDbOp(SQLWorker worker, PreparedStatement ps, DBOp dbOp);
 }
