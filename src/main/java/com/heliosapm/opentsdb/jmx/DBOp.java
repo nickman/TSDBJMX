@@ -26,6 +26,8 @@ package com.heliosapm.opentsdb.jmx;
 public abstract class DBOp implements Comparable<DBOp>, Runnable {
 	/** The Op Type */
 	public final MetaDBOp op;
+	/** The cache insert op */
+	public final Runnable cacheOp;
 	
 	/** The op arguments */
 	protected final Object[] args;
@@ -33,11 +35,13 @@ public abstract class DBOp implements Comparable<DBOp>, Runnable {
 	/**
 	 * Creates a new DBOp
 	 * @param op The op type
+	 * @param cacheOp The cache insert op 
 	 * @param args the Op arguments
 	 */
-	public DBOp(final MetaDBOp op, final Object...args) {
+	public DBOp(final MetaDBOp op, final Runnable cacheOp, final Object...args) {
 		this.op = op;
 		this.args = args;
+		this.cacheOp = cacheOp;
 	}
 	
 	/**
@@ -46,12 +50,20 @@ public abstract class DBOp implements Comparable<DBOp>, Runnable {
 	 */
 	@Override
 	public int compareTo(final DBOp otherOp) {
-		if(otherOp.op==op) return -1;
+		if(otherOp.op==op) return 1;
 		return otherOp.op.compareTo(op);
 	}
 	
 	public Object[] getArgs() {
 		return args;
+	}
+
+	/**
+	 * Returns the cache insert op 
+	 * @return the cacheOp
+	 */
+	public Runnable getCacheOp() {
+		return cacheOp;
 	}
 	
 }
