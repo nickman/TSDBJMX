@@ -71,7 +71,6 @@ import com.heliosapm.utils.reflect.PrivateAccessor;
 import com.heliosapm.utils.time.SystemClock;
 import com.heliosapm.utils.time.SystemClock.ElapsedTime;
 import com.heliosapm.utils.url.URLHelper;
-import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -144,7 +143,7 @@ public class Probe extends SearchPlugin implements Runnable {
 	
 	
 	final JMXManagedThreadFactory threadFactory = (JMXManagedThreadFactory) JMXManagedThreadFactory.newThreadFactory("Probe", true); 
-	final JMXManagedThreadPool threadPool = new JMXManagedThreadPool(JMXHelper.objectName(getClass()), "Probe", 32, 32, 100000, 60000, 200, 99);
+	final JMXManagedThreadPool threadPool = new JMXManagedThreadPool(JMXHelper.objectName(getClass()), "Probe", 32, 32, 300000, 60000, 200, 99);
 	final Set<Deferred<Object>> defs = new CopyOnWriteArraySet<Deferred<Object>>();
 
 	
@@ -285,6 +284,7 @@ public class Probe extends SearchPlugin implements Runnable {
 		this.client = client;
 		try {
 			tsdb = new TSDB(client, new Config("opentsdb.conf"));
+			initialize(tsdb);
 			//"private SearchPlugin search = null;"
 			PrivateAccessor.setFieldValue(tsdb, "search", this);
 			config = new HikariConfig(props);
@@ -910,13 +910,22 @@ public class Probe extends SearchPlugin implements Runnable {
 			ERR.println("");
 		}
 	}
+	
+	private JMXRPC jmxRpc = null;
 
 	/**
 	 * {@inheritDoc}
 	 * @see net.opentsdb.search.SearchPlugin#initialize(net.opentsdb.core.TSDB)
 	 */
 	@Override
-	public void initialize(TSDB tsdb) {
+	public void initialize(final TSDB tsdb) {
+		final Thread t = new Thread() {
+			public void run() {
+				jmxRpc = new JMXRPC();
+				jmxRpc.initialize(tsdb);
+			}
+		};
+		t.setDaemon(true);
 		LOG.info("Search Plugin Initialized");		
 	}
 
