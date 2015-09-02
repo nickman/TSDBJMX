@@ -64,10 +64,14 @@ import org.slf4j.LoggerFactory;
 
 import com.heliosapm.tsdbex.sqlbinder.SQLWorker;
 import com.heliosapm.tsdbex.sqlbinder.SQLWorker.ResultSetHandler;
+import com.heliosapm.utils.jmx.JMXHelper;
+import com.heliosapm.utils.jmx.JMXManagedThreadFactory;
+import com.heliosapm.utils.jmx.JMXManagedThreadPool;
 import com.heliosapm.utils.reflect.PrivateAccessor;
 import com.heliosapm.utils.time.SystemClock;
 import com.heliosapm.utils.time.SystemClock.ElapsedTime;
 import com.heliosapm.utils.url.URLHelper;
+import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -102,6 +106,7 @@ public class Probe extends SearchPlugin implements Runnable {
 	final LongAdder metricUidCount = new LongAdder();
 	final LongAdder tagVUidCount = new LongAdder();
 	final LongAdder tagKUidCount = new LongAdder();
+	final LongAdder annotationCount = new LongAdder();
 	
 	final Map<String, UIDMeta> metricNames = new ConcurrentHashMap<String, UIDMeta>();
 	final Map<String, UIDMeta> tagVNames = new ConcurrentHashMap<String, UIDMeta>();
@@ -136,6 +141,11 @@ public class Probe extends SearchPlugin implements Runnable {
 	Thread processingThread = null;
 	
 	boolean keepProcessing = true;
+	
+	
+	final JMXManagedThreadFactory threadFactory = (JMXManagedThreadFactory) JMXManagedThreadFactory.newThreadFactory("Probe", true); 
+	final JMXManagedThreadPool threadPool = new JMXManagedThreadPool(JMXHelper.objectName(getClass()), "Probe", 32, 32, 100000, 60000, 200, 99);
+	final Set<Deferred<Object>> defs = new CopyOnWriteArraySet<Deferred<Object>>();
 
 	
 	
@@ -248,6 +258,7 @@ public class Probe extends SearchPlugin implements Runnable {
 		metricUidCount.reset();
 		metricNames.clear();
 		tagVUidCount.reset();
+		annotationCount.reset();
 		tagVNames.clear();
 		tagKUidCount.reset();
 		tagKNames.clear();
@@ -259,6 +270,7 @@ public class Probe extends SearchPlugin implements Runnable {
 		b.append("\n\t\tMetrics:").append(metricUidCount.longValue());
 		b.append("\n\t\tTag Keys:").append(tagKUidCount.longValue());
 		b.append("\n\t\tTag Values:").append(tagVUidCount.longValue());
+		b.append("\n\t\tAnnotations:").append(annotationCount.longValue());
 		return b.toString();
 	}
 	
@@ -269,6 +281,7 @@ public class Probe extends SearchPlugin implements Runnable {
 	 * @param props 
 	 */
 	public Probe(final HBaseClient client, final Properties props) {
+		threadPool.prestartAllCoreThreads();
 		this.client = client;
 		try {
 			tsdb = new TSDB(client, new Config("opentsdb.conf"));
@@ -377,55 +390,63 @@ public class Probe extends SearchPlugin implements Runnable {
 		 */
 //		@Override
 		public Deferred<Object> indexTSMeta(final TSMeta meta) {
-			tsMetaCount.increment();
-			final Set<String> XUIDS = new LinkedHashSet<String>();
-			try {
-				UIDMeta metric = meta.getMetric();
-				storeUID(UniqueIdType.METRIC, metric);
-				UIDMeta keyUID = null;
-				for(UIDMeta uid: meta.getTags()) {
-					if(UniqueIdType.TAGK==uid.getType()) {
-						storeUID(UniqueIdType.TAGK, uid);
-						keyUID = uid;
-					} else {
-						storeUID(UniqueIdType.TAGV, uid);
-						final String xuid = keyUID.getUID() + uid.getUID();
-						if(!tagPairKeys.containsKey(xuid)) {
-							synchronized(tagPairKeys) {
+			final Deferred<Object> def = new Deferred<Object>();
+			threadPool.execute(new Runnable(){
+				public void run() {
+					tsMetaCount.increment();
+					final Set<String> XUIDS = new LinkedHashSet<String>();
+					try {
+						UIDMeta metric = meta.getMetric();
+						storeUID(UniqueIdType.METRIC, metric);
+						UIDMeta keyUID = null;
+						for(UIDMeta uid: meta.getTags()) {
+							if(UniqueIdType.TAGK==uid.getType()) {
+								storeUID(UniqueIdType.TAGK, uid);
+								keyUID = uid;
+							} else {
+								storeUID(UniqueIdType.TAGV, uid);
+								final String xuid = keyUID.getUID() + uid.getUID();
+								XUIDS.add(xuid);
 								if(!tagPairKeys.containsKey(xuid)) {
-									MetaDBOp.UIDPAIR.newDbOp(sqlWorker, tagPairInsertPs, null, xuid, keyUID.getUID(), uid.getUID(), keyUID.getName() + "=" + uid.getName()).run();
-									tagPairKeys.put(xuid, new String[]{keyUID.getName(), uid.getName()});
-									XUIDS.add(xuid);
+									synchronized(tagPairKeys) {
+										if(!tagPairKeys.containsKey(xuid)) {
+											MetaDBOp.UIDPAIR.newDbOp(sqlWorker, tagPairInsertPs, null, xuid, keyUID.getUID(), uid.getUID(), keyUID.getName() + "=" + uid.getName()).run();
+											tagPairKeys.put(xuid, new String[]{keyUID.getName(), uid.getName()});									
+										}
+									}
 								}
+								keyUID = null;
 							}
 						}
-						keyUID = null;
+						final String fqn = renderTSMeta(meta);
+						final long[] seq = new long[1];
+						MetaDBOp.TSMETA.newDbOp(sqlWorker, null, null, metric.getUID(), fqn, meta.getTSUID(), seq).run();
+						int x = 0;
+						for(Iterator<String> xuidIter = XUIDS.iterator(); xuidIter.hasNext();) {
+							x++;
+							final String xuid = xuidIter.next();
+							xuidIter.remove();
+							final long[] pseq = new long[]{-1L};
+							MetaDBOp.UIDPAIRFQN.newDbOp(sqlWorker, null, null, pseq, seq[0], xuid, x, XUIDS.isEmpty() ? "B" : "L").run();					
+						}
+//						Annotation.getAnnotation(tsdb, meta.getTSUID(), 0);
+//						LOG.info("Saved TSUID: [{}]", fqn);
+					} catch (Exception ex) {
+						LOG.info("Unexpected TSMeta Error", ex);
+					} finally {
+						def.callback(null);
 					}
 				}
-				final String fqn = renderTSMeta(meta);
-				final long[] seq = new long[1];
-				MetaDBOp.TSMETA.newDbOp(sqlWorker, null, null, metric.getUID(), fqn, meta.getTSUID(), seq).run();
-				int x = 0;
-				for(Iterator<String> xuidIter = XUIDS.iterator(); xuidIter.hasNext();) {
-					x++;
-					final String xuid = xuidIter.next();
-					xuidIter.remove();
-					//=================================================================================================							
-//					final long[] seqRef = (long[])opArgs[0];
-//					seqRef[0] = worker.sqlForLong("SELECT nextval('fqn_tp_seq')");
-//					final long fqnId = (Long)opArgs[1];
-//					final String xuid = (String)opArgs[2];
-//					final int porder = (Integer)opArgs[3];
-//					final String node = (String)opArgs[4];
-//=================================================================================================					
-					final long[] pseq = new long[]{-1L};
-					MetaDBOp.UIDPAIRFQN.newDbOp(sqlWorker, null, null, pseq, seq[0], xuid, x, XUIDS.isEmpty() ? "B" : "L").run();					
-				}
-				LOG.info("Saved TSUID: [{}]", fqn);
-			} catch (Exception ex) {
-				LOG.info("Unexpected TSMeta Error", ex);
-			}
-			return Deferred.fromResult(null);
+			});			
+//			def.addBoth(new Callback<Void, Object>(){
+//				@Override
+//				public Void call(final Object arg) throws Exception {
+//					//defs.remove(def);
+//					return null;
+//				}
+//			});
+			defs.add(def);
+			return def;
 		}
 	  
 	  
@@ -671,6 +692,20 @@ public class Probe extends SearchPlugin implements Runnable {
 		 */
 		@Override
 		public Deferred<Object> indexUIDMeta(final UIDMeta meta) {
+			switch(meta.getType()) {
+			case METRIC:
+				metricUidCount.increment();
+				break;
+			case TAGK:
+				tagKUidCount.increment();
+				break;
+			case TAGV:
+				tagVUidCount.increment();
+				break;
+			default:
+				break;
+				
+			}
 ////			LOG.info("UIDMeta: {}", meta.getName());
 //			try {
 //				switch(meta.getType()) {
@@ -754,9 +789,22 @@ public class Probe extends SearchPlugin implements Runnable {
 			Method method = uidManagerClazz.getDeclaredMethod("metaSync", TSDB.class);
 			method.setAccessible(true);
 			Number x = (Number)method.invoke(null, tsdb);
-			long elapsed = System.currentTimeMillis() - start;
+//			LOG.info("Waiting for tasks to enqueue. So far: {}", defs.size());
+//			SystemClock.sleep(20000);
+			LOG.info("Waiting for {} tasks to complete....", defs.size());
+			final Deferred<ArrayList<Object>> masterDef = Deferred.group(defs);
+			masterDef.joinUninterruptibly();
+			defs.clear();
+			final long end = System.currentTimeMillis();
+			final long elapsed = end - start;
+			LOG.info("Tasks Complete: {} ms.", elapsed);
 			LOG.info("MetaSync Result:" + x);
-			LOG.info("metaSync complete in {}: {}", elapsed, x);
+			LOG.info("metaSync complete in {}: result {}", elapsed, x);
+			final Annotation ann = new Annotation();
+			ann.setStartTime(start/1000);
+			ann.setEndTime(end/1000);
+			ann.setDescription("MetaSync Elapsed Time");
+			ann.syncToStorage(tsdb,  true).joinUninterruptibly(5000);
 //			LOG.info("Waiting for processing thread....");
 //			processingThread.join(120000);
 			LOG.info("Processing Complete");
@@ -923,6 +971,7 @@ public class Probe extends SearchPlugin implements Runnable {
 	 */
 	@Override
 	public Deferred<Object> indexAnnotation(Annotation note) {
+		annotationCount.increment();
 		return Deferred.fromResult(null);
 	}
 

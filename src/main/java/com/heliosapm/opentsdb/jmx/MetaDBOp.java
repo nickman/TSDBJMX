@@ -164,6 +164,32 @@ public enum MetaDBOp implements DBOpFactory {
 				}
 			};			
 		}
+	},
+	/** Inserts annotations */
+	//                                         seq, 1, start, updt, null, null, fqnid, endtime, null
+	ANNOTATION("INSERT INTO TSD_ANNOTATION VALUES(nextval('ann_seq'),1,?,?,null, null, ?, ?, null)"){
+		@Override
+		public DBOp newDbOp(final SQLWorker worker, final PreparedStatement ps, final Runnable cachePush, final Object...args) {
+			final Object[] opArgs = args;
+			return new DBOp(UIDPAIR, cachePush, opArgs) {
+				@Override
+				public void run() {
+					
+					final long[] seqRef = (long[])opArgs[0];
+					seqRef[0] = worker.sqlForLong("SELECT nextval('fqn_tp_seq')");
+					final long fqnId = (Long)opArgs[1];
+					final String xuid = (String)opArgs[2];
+					final int porder = (Integer)opArgs[3];
+					final String node = (String)opArgs[4];
+					try {
+//						worker.batch(ps.getConnection(), ps, sqlOp, pairKey, tagKey, tagValue, name);
+						worker.execute(sqlOp, seqRef[0], fqnId, xuid, porder, node);
+					} catch (Exception ex) {
+						throw new RuntimeException("DBOp Failure [" + op + "]", ex);
+					}
+				}
+			};			
+		}
 	};	
 	
 //	UIDPAIRFQN(){
