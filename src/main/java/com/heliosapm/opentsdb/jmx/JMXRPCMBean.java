@@ -18,14 +18,14 @@ under the License.
  */
 package com.heliosapm.opentsdb.jmx;
 
+import java.util.List;
+import java.util.Map;
+
 import javax.management.ObjectName;
 
-import net.opentsdb.meta.UIDMeta;
-import net.opentsdb.uid.NoSuchUniqueId;
-import net.opentsdb.uid.UniqueId.UniqueIdType;
-
 import com.heliosapm.utils.jmx.JMXHelper;
-import com.stumbleupon.async.Callback;
+
+import net.opentsdb.uid.NoSuchUniqueId;
 
 /**
  * <p>Title: JMXRPCMBean</p>
@@ -122,6 +122,43 @@ public interface JMXRPCMBean {
 	 * @return the UID cache size
 	 */
 	public int getUidCacheSize();
+	
+	public void flush()  throws Exception;
+	
+	public Map<String, String> getConfig();
+	
+	public int get99thPutLatency();
+	
+	public int get95thPutLatency();
+	
+	public int get75thPutLatency();
+	
+	public int get50thPutLatency();
+	
+	public int get99thScanLatency();
+	
+	public int get95thScanLatency();
+	
+	public int get75thScanLatency();
+	
+	public int get50thScanLatency();
+	
+	public void shutdownTSD() throws Exception;
+	
+	public List<String> suggestMetrics(String search);
+	
+	public List<String> suggestMetrics(String search, int max_results);
+	
+	public List<String> suggestTagNames(String search);
+	
+	public List<String> suggestTagNames(String search, int max_results);
+	
+	public List<String> suggestTagValues(String search);
+	
+	public List<String> suggestTagValues(String search, int max_results);
+	
+	
+	
 	
 	
 	

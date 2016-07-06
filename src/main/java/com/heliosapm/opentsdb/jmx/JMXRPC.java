@@ -23,11 +23,21 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.management.remote.JMXConnectorServer;
 import javax.management.remote.JMXConnectorServerFactory;
 import javax.management.remote.JMXServiceURL;
+
+import org.hbase.async.HBaseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.heliosapm.utils.concurrency.ExtendedThreadManager;
+import com.heliosapm.utils.jmx.JMXHelper;
+import com.stumbleupon.async.Deferred;
+import com.stumbleupon.async.TimeoutException;
 
 import net.opentsdb.core.TSDB;
 import net.opentsdb.meta.Annotation;
@@ -37,16 +47,6 @@ import net.opentsdb.tsd.RpcPlugin;
 import net.opentsdb.uid.NoSuchUniqueId;
 import net.opentsdb.uid.UniqueId.UniqueIdType;
 import net.opentsdb.utils.Config;
-
-import org.hbase.async.HBaseException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import com.heliosapm.utils.concurrency.ExtendedThreadManager;
-import com.heliosapm.utils.jmx.JMXHelper;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
-import com.stumbleupon.async.TimeoutException;
 
 /**
  * <p>Title: JMXRPC</p>
@@ -193,12 +193,88 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 //		return tsdb.getClient();
 //	}
 
-	/**
-	 * @return
-	 * @see net.opentsdb.core.TSDB#getConfig()
-	 */
-	public final Config getConfig() {
-		return tsdb.getConfig();
+	public Map<String, String> getConfig() {
+		return new TreeMap<String, String>(config.getMap());
+	}
+	
+	@Override
+	public int get99thScanLatency() {		
+		return tsdb.getScanLatencyHistogram().percentile(99);
+	}
+	
+	@Override
+	public int get95thScanLatency() {		
+		return tsdb.getScanLatencyHistogram().percentile(95);
+	}
+	
+	@Override
+	public int get75thScanLatency() {		
+		return tsdb.getScanLatencyHistogram().percentile(75);
+	}
+	
+	@Override
+	public int get50thScanLatency() {		
+		return tsdb.getScanLatencyHistogram().percentile(50);
+	}
+	
+	@Override
+	public int get99thPutLatency() {		
+		return tsdb.getPutLatencyHistogram().percentile(99);
+	}
+	
+	@Override
+	public int get95thPutLatency() {		
+		return tsdb.getPutLatencyHistogram().percentile(95);
+	}
+	
+	@Override
+	public int get75thPutLatency() {		
+		return tsdb.getPutLatencyHistogram().percentile(75);
+	}
+	
+	@Override
+	public int get50thPutLatency() {		
+		return tsdb.getPutLatencyHistogram().percentile(50);
+	}
+	
+	@Override
+	public List<String> suggestMetrics(final String search, final int max_results) {
+		return tsdb.suggestMetrics(search, max_results);
+	}
+	
+	@Override
+	public List<String> suggestMetrics(final String search) {
+		return tsdb.suggestMetrics(search);
+	}
+	
+	@Override
+	public List<String> suggestTagNames(final String search, final int max_results) {
+		return tsdb.suggestTagNames(search, max_results);
+	}
+	
+	@Override
+	public List<String> suggestTagNames(final String search) {
+		return tsdb.suggestTagNames(search);
+	}
+	
+	@Override
+	public List<String> suggestTagValues(final String search, final int max_results) {
+		return tsdb.suggestTagValues(search, max_results);
+	}
+	
+	@Override
+	public List<String> suggestTagValues(final String search) {
+		return tsdb.suggestTagValues(search);
+	}
+	
+	@Override
+	public void flush()  throws Exception {
+		tsdb.flush().joinUninterruptibly(30000);		
+	}
+	
+	@Override
+	public void shutdownTSD() throws Exception {
+		tsdb.flush();		
 	}
 	
 	private UniqueIdType decode(final String uniqueIdType) {
@@ -400,62 +476,6 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	public Deferred<Object> addPoint(String metric, long timestamp,
 			double value, Map<String, String> tags) {
 		return tsdb.addPoint(metric, timestamp, value, tags);
-	}
-
-	/**
-	 * @return
-	 * @throws HBaseException
-	 * @see net.opentsdb.core.TSDB#flush()
-	 */
-	public Deferred<Object> flush() throws HBaseException {
-		return tsdb.flush();
-	}
-
-	/**
-	 * @param search
-	 * @return
-	 * @see net.opentsdb.core.TSDB#suggestMetrics(java.lang.String)
-	 */
-	public List<String> suggestMetrics(String search) {
-		return tsdb.suggestMetrics(search);
-	}
-
-	/**
-	 * @param search
-	 * @return
-	 * @see net.opentsdb.core.TSDB#suggestTagNames(java.lang.String)
-	 */
-	public List<String> suggestTagNames(String search) {
-		return tsdb.suggestTagNames(search);
-	}
-
-	/**
-	 * @param search
-	 * @param max_results
-	 * @return
-	 * @see net.opentsdb.core.TSDB#suggestTagNames(java.lang.String, int)
-	 */
-	public List<String> suggestTagNames(String search, int max_results) {
-		return tsdb.suggestTagNames(search, max_results);
-	}
-
-	/**
-	 * @param search
-	 * @return
-	 * @see net.opentsdb.core.TSDB#suggestTagValues(java.lang.String)
-	 */
-	public List<String> suggestTagValues(String search) {
-		return tsdb.suggestTagValues(search);
-	}
-
-	/**
-	 * @param search
-	 * @param max_results
-	 * @return
-	 * @see net.opentsdb.core.TSDB#suggestTagValues(java.lang.String, int)
-	 */
-	public List<String> suggestTagValues(String search, int max_results) {
-		return tsdb.suggestTagValues(search, max_results);
 	}
 
 	/**
