@@ -12,7 +12,7 @@
  		<compiler-source.version>1.6</compiler-source.version>
  		<compiler-target.version>1.6</compiler-target.version>
  		<!-- Dependencies -->
- 		<opentsdb.version>2.1.0</opentsdb.version>
+ 		<opentsdb.version>2.3.0-RC1</opentsdb.version>
  		<junit.version>4.12</junit.version>
 		<jmx-optional.version>1.0-b02</jmx-optional.version>
 		<helios.version>1.0-SNAPSHOT</helios.version>
@@ -72,13 +72,6 @@
 		</dependency>
 		
 		
-
-		<!--   THE BEST-EST JMX PROTOCOL   -->
-        <dependency>
-          <groupId>com.betfair.net.java.opendmk</groupId>
-          <artifactId>jmx-optional</artifactId>
-          <version>${jmx-optional.version}</version>
-        </dependency>
 
 
 		<!--   OpenTSDB  -->
