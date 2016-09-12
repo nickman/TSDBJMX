@@ -73,13 +73,6 @@
 		
 		
 
-		<!--   THE BEST-EST JMX PROTOCOL   -->
-        <dependency>
-          <groupId>com.betfair.net.java.opendmk</groupId>
-          <artifactId>jmx-optional</artifactId>
-          <version>${jmx-optional.version}</version>
-        </dependency>
-
 
 		<!--   OpenTSDB  -->
 		<dependency>
