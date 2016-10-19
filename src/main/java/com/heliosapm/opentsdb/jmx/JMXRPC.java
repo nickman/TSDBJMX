@@ -19,6 +19,8 @@ under the License.
 package com.heliosapm.opentsdb.jmx;
 
 import java.lang.management.ManagementFactory;
+import java.nio.charset.Charset;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -30,7 +32,9 @@ import javax.management.remote.JMXConnectorServer;
 import javax.management.remote.JMXConnectorServerFactory;
 import javax.management.remote.JMXServiceURL;
 
-import org.hbase.async.HBaseException;
+import org.hbase.async.Bytes;
+import org.hbase.async.GetRequest;
+import org.hbase.async.KeyValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,6 +49,7 @@ import net.opentsdb.meta.UIDMeta;
 import net.opentsdb.stats.StatsCollector;
 import net.opentsdb.tsd.RpcPlugin;
 import net.opentsdb.uid.NoSuchUniqueId;
+import net.opentsdb.uid.UniqueId;
 import net.opentsdb.uid.UniqueId.UniqueIdType;
 import net.opentsdb.utils.Config;
 
@@ -58,6 +63,10 @@ import net.opentsdb.utils.Config;
 
 public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 	private static final Logger LOG = LoggerFactory.getLogger(JMXRPC.class);
+	
+	/** A charset for reconstituting bytes back into strings */
+	private static final Charset CHARSET = Charset.forName("ISO-8859-1");
+
 	
 	
 	/** The injected TSDB instance */
@@ -539,5 +548,48 @@ public class JMXRPC extends RpcPlugin implements JMXRPCMBean {
 		if(defaultTimeout<0) throw new IllegalArgumentException("The passed timeout [" + defaultTimeout + "] was invalid");
 		this.defaultTimeout = defaultTimeout;
 	}
+	
+	/**
+	   * Returns the max metric ID from the UID table
+	   * @param tsdb The TSDB to use for data access
+	   * @return The max metric ID as an integer value, may be 0 if the UID table
+	   * hasn't been initialized or is missing the UID row or metrics column.
+	   * @throws IllegalStateException if the UID column can't be found or couldn't
+	   * be parsed
+	   */
+	  public String findMaxMetricUID() {
+		  final long maxId =  findMaxMetricID();
+		  return UniqueId.uidToString(Bytes.fromLong(maxId));
+	  }
+	
+	
+	/**
+	   * Returns the max metric ID from the UID table
+	   * @param tsdb The TSDB to use for data access
+	   * @return The max metric ID as an integer value, may be 0 if the UID table
+	   * hasn't been initialized or is missing the UID row or metrics column.
+	   * @throws IllegalStateException if the UID column can't be found or couldn't
+	   * be parsed
+	   */
+	  public long findMaxMetricID() {
+	    final GetRequest get = new GetRequest(tsdb.uidTable(), new byte[] { 0 });
+	    get.family("id".getBytes(CHARSET));
+	    get.qualifier("metrics".getBytes(CHARSET));
+	    ArrayList<KeyValue> row;
+	    try {
+	      row = tsdb.getClient().get(get).joinUninterruptibly();
+	      if (row == null || row.isEmpty()) {
+	        return 0;
+	      }
+	      final byte[] id_bytes = row.get(0).value();
+	      if (id_bytes.length != 8) {
+	        throw new IllegalStateException("Invalid metric max UID, wrong # of bytes");
+	      }
+	      return Bytes.getLong(id_bytes);
+	    } catch (Exception e) {
+	      throw new RuntimeException("Shouldn't be here", e);
+	    }
+	  }
+	
 
 }
